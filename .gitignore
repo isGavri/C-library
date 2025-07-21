@@ -1,2 +1,12 @@
-./function_lineMacros
-./squareRoot
+function_lineMacros/
+squareRoot/
+
+**/*.o
+
+**/.cache/
+
+**/bin/
+
+memlogger/memlogger
+
+myMalloc/test_allocator

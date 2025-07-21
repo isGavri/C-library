@@ -1,0 +1,15 @@
+[
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-c",
+      "-Iinclude/",
+      "-o",
+      "bin/main.o",
+      "src/main.c"
+    ],
+    "directory": "/home/notsy/Documents/C/memlogger",
+    "file": "/home/notsy/Documents/C/memlogger/src/main.c",
+    "output": "/home/notsy/Documents/C/memlogger/bin/main.o"
+  }
+]

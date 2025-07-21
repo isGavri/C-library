@@ -1,0 +1,18 @@
+[
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-c",
+      "-Wall",
+      "-Wextra",
+      "-g",
+      "-Iinclude",
+      "-o",
+      "bin/allocator.o",
+      "src/allocator.c"
+    ],
+    "directory": "/home/notsy/Documents/C/myMalloc",
+    "file": "/home/notsy/Documents/C/myMalloc/src/allocator.c",
+    "output": "/home/notsy/Documents/C/myMalloc/bin/allocator.o"
+  }
+]
