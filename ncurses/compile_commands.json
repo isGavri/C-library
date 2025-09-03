@@ -1,0 +1,18 @@
+[
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-Wall",
+      "-Wextra",
+      "-std=c99",
+      "-Iinclude",
+      "-c",
+      "-o",
+      "bin/main.o",
+      "src/main.c"
+    ],
+    "directory": "/home/notsy/Documents/C/ncurses",
+    "file": "/home/notsy/Documents/C/ncurses/src/main.c",
+    "output": "/home/notsy/Documents/C/ncurses/bin/main.o"
+  }
+]

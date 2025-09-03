@@ -1,14 +1,14 @@
 COMPILER=gcc
 
 file_writer:
-	@$(COMPILER) -c src/file_writer/*.c -Iinclude/ -o bin/file_writer.o
+	@$(COMPILER) -c src/file_writer/*.c -Iinclude/ -o bin/file_writer.o -g
 	@echo "Built file_writer.o"
 
 free_memory_api:
-	@$(COMPILER) -c src/free_memory_api/*.c -Iinclude/ -o bin/free_memory_api.o
-	@echo "Build free_memory_api.o"
+	@$(COMPILER) -c src/free_memory_api/*.c -Iinclude/ -o bin/free_memory_api.o -g
+	@echo "Built free_memory_api.o"
 
 project:
-	$(COMPILER) -c src/main.c -Iinclude/ -o bin/main.o
-	@$(COMPILER) bin/free_memory_api.o bin/file_writer.o bin/main.o -o memlogger
+	$(COMPILER) -c src/main.c -Iinclude/ -o bin/main.o -g
+	@$(COMPILER) bin/free_memory_api.o bin/file_writer.o bin/main.o -o memlogger -g
 	@echo "Finished building memlogger"
