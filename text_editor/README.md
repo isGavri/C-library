@@ -4,6 +4,7 @@ Compile with
 ```sh
 make editor
 ```
+We make use of VT100 escape sequences. Support for maximum amount of terminals possible would be achived by using ncurses.
 # Part 1
 We read input from raw mode instead of canonical mode. For this we need to modify terminal's attributes using tcgetattr and tcsetattr. And unset some flags so we get our desired behaviour. All documented on code btw.
 
