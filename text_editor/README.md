@@ -10,7 +10,7 @@ This is an **early-stage implementation** that currently focuses on terminal man
 
 - **Raw Terminal Mode**: Switches from canonical to raw mode for character-by-character input
 - **Terminal Configuration**: Properly handles terminal attributes using `tcgetattr` and `tcsetattr`
-- **Screen Management**: Clears screen and basic display functionality using VT100 escape sequences
+- **Screen Management**: Clears screen and basic display functionality using [VT100](https://vt100.net/docs/vt100-ug/chapter3.html) escape sequences
 - **Window Size Detection**: Automatically detects terminal dimensions using `ioctl` with fallback
 - **Basic Input Handling**: Processes keystrokes individually in real-time
 - **Exit Functionality**: Ctrl+Q cleanly exits the program
