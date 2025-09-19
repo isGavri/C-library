@@ -1,3 +1,5 @@
+/*** includes ***/
+
 #include <asm-generic/errno-base.h>
 #include <errno.h>
 #include <stdio.h>
@@ -7,6 +9,10 @@
 #include <termios.h>
 #include <unistd.h>
 
+/*** defines ***/
+
+#define NOTSY_VERSION "0.0.1"
+
 // Replicate behaviour of ctrl key on terminal
 // bitwise AND operation with 0x1f aka 00011111
 // So basically sets the first 3 bits of any key to 0
@@ -14,9 +20,12 @@
 // aka 1, exactly the code that CTRL-a sends to terminal
 #define CTRL_KEY(k) ((k) & 0x1f) // 0x1f -> 00011111
 
+enum editorKey { ARROW_LEFT = 1000, ARROW_RIGHT, ARROW_UP, ARROW_DOWN };
+
 /*** data ***/
 
 struct editorConfig {
+  int cx, cy;
   int screenrows;
   int screencols;
   struct termios orig_termios;
@@ -98,7 +107,7 @@ void enableRawMode() {
 }
 
 // Waits fo keypress and return it and hanldes escape sequences
-char editorReadKey() {
+int editorReadKey() {
   int nread;
   char c;
   // Read from standard input, into c, one byte
@@ -109,7 +118,31 @@ char editorReadKey() {
     if (nread == -1 && errno != EAGAIN)
       die("read");
   }
-  return c;
+
+  if (c == '\x1b') {
+    char seq[3];
+    if (read(STDIN_FILENO, &seq[0], 1) != 1)
+      return '\x1b';
+    if (read(STDIN_FILENO, &seq[1], 1) != 1)
+      return '\x1b';
+
+    if (seq[0] == '[') {
+      switch (seq[1]) {
+      case 'A':
+        return ARROW_UP;
+      case 'B':
+        return ARROW_DOWN;
+      case 'C':
+        return ARROW_RIGHT;
+      case 'D':
+        return ARROW_LEFT;
+      }
+    }
+
+    return '\x1b'; // we return escape character
+  } else {
+    return c;
+  }
 }
 
 int getCursorPosition(int *rows, int *cols) {
@@ -185,13 +218,15 @@ struct abuf {
 // The size of the strings to be appended
 void abApppend(struct abuf *ab, const char *s, int len) {
   // We reallocate space for the new string plus the previous
-  char *new = realloc(ab->b, ab->len + len); // Returns a new pointer to available memory
+  char *new = realloc(
+      ab->b, ab->len + len); // Returns a new pointer to available memory
 
   // If the reallocation fails, finish the function
   if (new == NULL)
     return;
 
-  // We copy the passed string into after the old string (on the new memory region)
+  // We copy the passed string into after the old string (on the new memory
+  // region)
   memcpy(&new[ab->len], s, len);
   // Update the pointer in the struct
   ab->b = new;
@@ -199,49 +234,104 @@ void abApppend(struct abuf *ab, const char *s, int len) {
   ab->len += len;
 }
 
-void abFree(struct abuf *ab){
-  free(ab->b);
-}
+void abFree(struct abuf *ab) { free(ab->b); }
 
 /*** output ***/
 
-void editorDrawRows() {
+void editorDrawRows(struct abuf *ab) {
   int y;
   for (y = 0; y < E.screenrows; y++) {
-    write(STDOUT_FILENO, "~", 1); // Write the ~ rows
+    if (y == E.screenrows / 3) {
+      char welcome[80];
+      int welcomelen = snprintf(welcome, sizeof(welcome),
+                                "Notsy editor -- version %s", NOTSY_VERSION);
+      if (welcomelen > E.screencols)
+        welcomelen = E.screencols;
+      int padding = (E.screencols - welcomelen) / 2;
+      if (padding) {
+        abApppend(ab, "~", 1);
+        padding--;
+      }
+      while (padding--)
+        abApppend(ab, " ", 1);
+      abApppend(ab, welcome, welcomelen);
+    } else {
+      abApppend(ab, "~", 1); // Updates buffer appending `~`
+    }
+    abApppend(ab, "\x1b[K", 3); // Clears the edited line
     if (y < E.screenrows - 1) {
-      write(STDOUT_FILENO, "\r\n", 2); // Passes lines if we are not on the last
+      abApppend(ab, "\r\n", 2); // Passes lines if we are not on the last
     }
   }
 }
 
 // Writes escape sequence for clearing terminal
 void editorRefreshScreen() {
+  struct abuf ab = ABUF_INIT; // Intializes append buffer
+
+  // Hide the cursor
+  abApppend(&ab, "\x1b[?25l", 6);
   // \x1b is 27 in decimal which is the escape character (first of the bytes
   // that we write) [2j are the rest Escape sequences stat with the escape
   // character followed by [ and then the command We are using J command (Erase
   // In Display) with the argument 2 wich clears the whole screen
   // [0j clears from the cursor on
   // [1j clears up to the cursor
-  write(STDOUT_FILENO, "\x1b[2J", 4);
+  // abApppend(&ab, "\x1b[2J", 4); // Deleted, now we just clear to the end of
+  // the screen
 
   // Reposition de cursor
   // Three bytes long, 27,[,H
   // H command takes two arguments, row and column. Separated by ;
   // Row and columns start at 1. Which is also the default
-  write(STDOUT_FILENO, "\x1b[H", 3);
+  abApppend(&ab, "\x1b[H", 3);
 
-  editorDrawRows();
+  editorDrawRows(&ab);
 
-  // Reposition cursor
-  write(STDOUT_FILENO, "\x1b[H", 3);
+  char buf[32];
+
+  snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy + 1,
+           E.cx + 1); // Moves cursor to the current coordinates
+  abApppend(&ab, buf, strlen(buf));
+
+  // Show the cursor
+  abApppend(&ab, "\x1b[?25h", 6);
+
+  write(STDOUT_FILENO, ab.b, ab.len); // Writes the lines to the buffer
+  abFree(&ab);
 }
 
 /*** input ***/
 
+void editorMoveCursor(int key) {
+  switch (key) {
+    // Will later modify to use vim motions
+  case ARROW_LEFT:
+    if (E.cx != 0) {
+      E.cx--;
+    }
+    break;
+  case ARROW_RIGHT:
+    if (E.cx != E.screencols - 1) {
+      E.cx++;
+    }
+    break;
+  case ARROW_UP:
+    if (E.cy != 0) {
+      E.cy--;
+    }
+    break;
+  case ARROW_DOWN:
+    if (E.cy != E.screenrows - 1) {
+      E.cy++;
+    }
+    break;
+  }
+}
+
 // waits for keypress and then handles it.
 void editorProcessKeypress() {
-  char c = editorReadKey();
+  int c = editorReadKey();
   // When ctrl + q is pressed exit the program with  status 0
   switch (c) {
   case CTRL_KEY('q'):
@@ -249,12 +339,21 @@ void editorProcessKeypress() {
     write(STDOUT_FILENO, "\x1b[H", 3);
     exit(0);
     break;
+
+  case ARROW_UP:
+  case ARROW_DOWN:
+  case ARROW_LEFT:
+  case ARROW_RIGHT:
+    editorMoveCursor(c);
+    break;
   }
 }
 
 /*** init ***/
 
 void initEditor() {
+  E.cx = 0;
+  E.cy = 0;
   if (getWindowSize(&E.screenrows, &E.screencols) == -1)
     die("getWindowSize");
 }
