@@ -6,12 +6,14 @@
 
 #include <asm-generic/errno-base.h>
 #include <errno.h>
+#include <stdarg.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <termios.h>
+#include <time.h>
 #include <unistd.h>
 
 /*** defines ***/
@@ -58,6 +60,9 @@ struct editorConfig {
   int screencols;
   int numrows;
   erow *row;
+  char *filename;
+  char statusmsg[80];
+  time_t statusmsg_time;
   struct termios orig_termios;
 };
 
@@ -330,6 +335,9 @@ void editorAppendRow(char *s, size_t len) {
 
 void editorOpen(char *filename) {
   // Open file read mode
+  free(E.filename);
+  E.filename = strdup(filename);
+
   FILE *fp = fopen(filename, "r");
   if (!fp)
     die("fopen");
@@ -477,10 +485,39 @@ void editorDrawRows(struct abuf *ab) {
 
     abApppend(ab, "\x1b[K", 3); // Clears the line from cursor to end
 
-    // Passes lines if we are not on the last
-    if (y < E.screenrows - 1)
-      abApppend(ab, "\r\n", 2);
+    abApppend(ab, "\r\n", 2);
   }
+}
+
+void editorDrawStatusBar(struct abuf *ab) {
+  abApppend(ab, "\x1b[7m", 4);
+  char status[80], rstatus[80];
+  int len = snprintf(status, sizeof(status), "%.20s - %d lines",
+                     E.filename ? E.filename : "[No Name]", E.numrows);
+  int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d", E.cy + 1, E.numrows);
+  if (len > E.screencols)
+    len = E.screencols;
+  abApppend(ab, status, len);
+  while (len < E.screencols) {
+    if (E.screencols - len == rlen) {
+      abApppend(ab, rstatus, rlen);
+      break;
+    } else {
+      abApppend(ab, " ", 1);
+      len++;
+    }
+  }
+  abApppend(ab, "\x1b[m", 3);
+  abApppend(ab, "\r\n", 2);
+}
+
+void editorDrawMessageBar(struct abuf *ab) {
+  abApppend(ab, "\x1b[K", 3);
+  int msglen = strlen(E.statusmsg);
+  if (msglen > E.screencols)
+    msglen = E.screencols;
+  if (msglen && time(NULL) - E.statusmsg_time < 5)
+    abApppend(ab, E.statusmsg, msglen);
 }
 
 // Writes escape sequence for clearing terminal
@@ -507,6 +544,8 @@ void editorRefreshScreen() {
   abApppend(&ab, "\x1b[H", 3);
 
   editorDrawRows(&ab);
+  editorDrawStatusBar(&ab);
+  editorDrawMessageBar(&ab);
 
   char buf[32];
 
@@ -519,6 +558,14 @@ void editorRefreshScreen() {
 
   write(STDOUT_FILENO, ab.b, ab.len); // Writes the lines to the buffer
   abFree(&ab);
+}
+
+void editorSetStatusMessage(const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(E.statusmsg, sizeof(E.statusmsg), fmt, ap);
+  va_end(ap);
+  E.statusmsg_time = time(NULL);
 }
 
 /*** input ***/
@@ -615,8 +662,12 @@ void initEditor() {
   E.coloff = 0;
   E.numrows = 0;
   E.row = NULL;
+  E.filename = NULL;
+  E.statusmsg[0] = '\0';
+  E.statusmsg_time = 0;
   if (getWindowSize(&E.screenrows, &E.screencols) == -1)
     die("getWindowSize");
+  E.screenrows -= 2;
 }
 
 int main(int argc, char *argv[]) {
@@ -626,8 +677,8 @@ int main(int argc, char *argv[]) {
   if (argc >= 2) {
     editorOpen(argv[1]);
   }
-  // Loads contents to the screen
-  // iscntrl tests whether a character is a control character. From 0-31 and 127
+
+  editorSetStatusMessage("HELP: Ctrl-Q = quit");
 
   // Reads 1 byte from file descriptor STDIN_FILENO aka 0 aka standard input on
   // Unix, into c (buffer) When it reads 'q' exits the program.
