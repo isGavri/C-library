@@ -29,6 +29,7 @@
 #define CTRL_KEY(k) ((k) & 0x1f) // 0x1f -> 00011111
 
 enum editorKey {
+  BACKSPACE = 127,
   ARROW_LEFT = 1000,
   ARROW_RIGHT,
   ARROW_UP,
@@ -42,28 +43,30 @@ enum editorKey {
 
 /*** data ***/
 
-// Editor orw. Line of text as a pointer
+// Row (line) of text in the editor
 typedef struct erow {
-  int size;
-  int rsize;
-  char *chars;
-  char *render;
+  int size;     // length of chars excluding null terminator
+  int rsize;    // length of rendered text (render)
+  char *chars;  // pointer to the raw text of the line (file content)
+  char *render; // pointer to the rendered version of line (tabs expanded)
 
 } erow;
 
+// Global state of the editor - E
 struct editorConfig {
-  int cx, cy;
-  int rx;
-  int rowoff;
-  int coloff;
-  int screenrows;
-  int screencols;
-  int numrows;
-  erow *row;
-  char *filename;
-  char statusmsg[80];
-  time_t statusmsg_time;
-  struct termios orig_termios;
+  int cx, cy;            // cursor position
+  int rx;                // rendered coordinate
+  int rowoff;            // offset
+  int coloff;            // offset
+  int screenrows;        // number of rows in the terminal
+  int screencols;        // number of columns on the terminal
+  int numrows;           // row of the file
+  erow *row;             // array of erow 0 - lines of file
+  char *filename;        // name of the opened file
+  char statusmsg[80];    // buffer for status message
+  time_t statusmsg_time; // timestamp to when the statumsg was set
+  struct termios
+      orig_termios; // original terminal attributes for restoration on exit
 };
 
 struct editorConfig E;
@@ -340,6 +343,15 @@ void editorRowInsertChar(erow *row, int at, int c) {
   editorUpdateRow(row);
 }
 
+/*** editor operations ***/
+void editorInsertChar(int c) {
+  if (E.cy == E.numrows) {
+    editorAppendRow("", 0);
+  }
+  editorRowInsertChar(&E.row[E.cy], E.cx, c);
+  E.cx++;
+}
+
 /*** file i/o ***/
 
 void editorOpen(char *filename) {
@@ -371,10 +383,10 @@ void editorOpen(char *filename) {
 
 /*** append buffer ***/
 
-// String that allows easy concatenation
+// Append buffer for efficient screen rendering
 struct abuf {
-  char *b;
-  int len;
+  char *b; // Pointer to the dynamically allocated buffer
+  int len; // length of the string in the buffer
 };
 
 #define ABUF_INIT {NULL, 0}
@@ -622,6 +634,9 @@ void editorProcessKeypress() {
   int c = editorReadKey();
   // When ctrl + q is pressed exit the program with  status 0
   switch (c) {
+  case '\r':
+    /* TODO: */
+    break;
   case CTRL_KEY('q'):
     write(STDOUT_FILENO, "\x1b[2J", 4);
     write(STDOUT_FILENO, "\x1b[H", 3);
@@ -637,7 +652,11 @@ void editorProcessKeypress() {
     if (E.cy < E.numrows)
       E.cx = E.row[E.cy].size;
     break;
-
+  case BACKSPACE:
+  case CTRL_KEY('h'):
+  case DEL_KEY:
+    /* TODO: */
+    break;
   case PAGE_UP:
   case PAGE_DOWN: {
     if (c == PAGE_UP) {
@@ -657,6 +676,12 @@ void editorProcessKeypress() {
   case ARROW_LEFT:
   case ARROW_RIGHT:
     editorMoveCursor(c);
+    break;
+  case CTRL_KEY('l'):
+  case '\x1b':
+    break;
+  default:
+    editorInsertChar(c);
     break;
   }
 }

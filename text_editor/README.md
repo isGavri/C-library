@@ -1,6 +1,6 @@
 # C Text Editor "Notsy"
 
-A minimal text editor implementation in C, based on [antirez's kilo tutorial](http://antirez.com/news/108). This project extends the basic terminal setup to include file viewing, vertical scrolling, and cursor navigation.
+A minimal text editor implementation in C, based on [antirez's kilo tutorial](http://antirez.com/news/108). This project extends the basic terminal setup to include file viewing, vertical scrolling, and cursor navigation. The README was mostly AI generated, will check on it later.
 
 ## Current State
 
@@ -18,15 +18,18 @@ This implementation has progressed beyond basic terminal I/O and now functions a
 - **Cursor Movement**: Supports `Arrow Keys` for navigation, `Home`/`End` to jump to the start/end of a line, and `Page Up`/`Page Down` for block scrolling.
 - **Append Buffer**: Uses a dynamic string buffer (`abuf`) for efficient screen rendering, minimizing `write()` calls.
 - **Exit Functionality**: `Ctrl+Q` cleanly exits the program and restores the terminal state.
+- **Status Bar**: Displays filename and current line position.
+- **Status Messages**: Shows help text and messages to the user.
+- **Horizontal Scrolling**: Lines wider than the screen can be scrolled with `E.coloff`.
+- **Tab Rendering**: Tabs are rendered as spaces with configurable tab stop width.
 
 ### ❌ Not Yet Implemented
 
 - **Text Editing**: No character insertion, deletion, or modification.
 - **Saving Files**: Cannot write changes back to a file.
-- **Horizontal Scrolling**: Lines wider than the screen are truncated.
 - **Search/Replace**: No search functionality.
-- **Status Bar/Messages**: No status bar to display filename, line number, etc.
 - **Syntax Highlighting**: No code highlighting features.
+- **Undo/Redo**: No undo or redo functionality.
 
 ## Building and Running
 
@@ -54,9 +57,35 @@ To start with an empty buffer:
 ## Technical Implementation
 
 ### Core Data Structures
-- **`struct editorConfig E`**: A global struct holding the editor's state, including cursor position (`cx`, `cy`), screen dimensions (`screenrows`, `screencols`), file content (`row`, `numrows`), and the vertical scroll offset (`rowoff`).
-- **`typedef struct erow`**: Represents a single line of text in the file, containing the line's content (`chars`) and its length (`size`).
-- **`struct abuf`**: An "append buffer" used to build the entire screen content in memory before writing it to the terminal with a single `write()` system call. This is far more efficient than making many small `write()` calls.
+
+#### `typedef struct erow`
+Represents a single row (line) of text in the editor.
+- **`int size`**: The length of the actual text content in `chars` (excludes null terminator).
+- **`int rsize`**: The length of the rendered text in `render` (after processing tabs, etc.).
+- **`char *chars`**: Pointer to the raw text content of the line (actual file content).
+- **`char *render`**: Pointer to the rendered version of the line (with tabs expanded to spaces).
+
+#### `struct editorConfig`
+The global state of the editor, stored in variable `E`.
+- **`int cx, cy`**: Cursor position - `cx` is the column (x-coordinate), `cy` is the row (y-coordinate) in the file.
+- **`int rx`**: The horizontal coordinate in the rendered line (accounting for tabs).
+- **`int rowoff`**: Vertical scroll offset - the row of the file at the top of the screen.
+- **`int coloff`**: Horizontal scroll offset - the column of the file at the left edge of the screen.
+- **`int screenrows`**: Number of rows available in the terminal for displaying text (excludes status bar).
+- **`int screencols`**: Number of columns available in the terminal.
+- **`int numrows`**: Total number of rows (lines) in the file.
+- **`erow *row`**: Dynamic array of `erow` structs, one for each line in the file.
+- **`char *filename`**: Name of the currently opened file (NULL if no file is open).
+- **`char statusmsg[80]`**: Buffer for the status message displayed at the bottom of the screen.
+- **`time_t statusmsg_time`**: Timestamp when the status message was set (for auto-clearing).
+- **`struct termios orig_termios`**: Original terminal attributes, saved for restoration on exit.
+
+#### `struct abuf`
+An append buffer used for efficient screen rendering.
+- **`char *b`**: Pointer to the dynamically allocated buffer containing the accumulated string.
+- **`int len`**: Current length of the string in the buffer.
+
+This structure minimizes the number of `write()` system calls by building the entire screen in memory first.
 
 ### Program Flow
 1.  **Initialization (`main`, `initEditor`)**:
@@ -84,3 +113,31 @@ To start with an empty buffer:
 ### Input Handling (`editorReadKey`)
 - Input is read byte-by-byte.
 - If an escape character (``) is detected, the function reads the following bytes to determine if it's a recognized escape sequence (like arrow keys, Home/End, etc.). These are mapped to a custom `enum editorKey` for clear and simple processing in `editorProcessKeypress()`.
+### Key Functions
+
+#### Terminal Setup
+- **`enableRawMode()`**: Disables canonical mode and echo, enabling raw character input.
+- **`disableRawMode()`**: Restores original terminal settings.
+- **`die()`**: Error handler that clears the screen and exits with an error message.
+
+#### File Operations
+- **`editorOpen()`**: Opens a file and loads its content line by line into the `E.row` array.
+- **`editorAppendRow()`**: Adds a new row to the editor, allocating memory and copying content.
+- **`editorUpdateRow()`**: Updates the rendered version of a row (expands tabs to spaces).
+
+#### Rendering
+- **`editorScroll()`**: Adjusts `rowoff` and `coloff` to keep the cursor visible on screen.
+- **`editorDrawRows()`**: Renders all visible rows of the file to the append buffer.
+- **`editorDrawStatusBar()`**: Renders the status bar showing filename and position.
+- **`editorDrawMessageBar()`**: Renders the message bar at the bottom of the screen.
+- **`editorRefreshScreen()`**: Main rendering function that orchestrates the screen update.
+
+#### Input Processing
+- **`editorReadKey()`**: Reads a keypress and handles escape sequences.
+- **`editorMoveCursor()`**: Moves the cursor based on arrow key input with boundary checking.
+- **`editorProcessKeypress()`**: Main input handler that processes keypresses and executes commands.
+
+#### Utilities
+- **`editorRowCxToRx()`**: Converts cursor column position to render position (handles tabs).
+- **`getWindowSize()`**: Determines the terminal window size using `ioctl` or cursor positioning.
+- **`editorSetStatusMessage()`**: Sets a status message with printf-style formatting.
