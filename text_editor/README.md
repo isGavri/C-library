@@ -22,11 +22,11 @@ This implementation has progressed beyond basic terminal I/O and now functions a
 - **Status Messages**: Shows help text and messages to the user.
 - **Horizontal Scrolling**: Lines wider than the screen can be scrolled with `E.coloff`.
 - **Tab Rendering**: Tabs are rendered as spaces with configurable tab stop width.
+- **Text Editing**: No character insertion, deletion, or modification.
+- **Saving Files**: Cannot write changes back to a file.
 
 ### ❌ Not Yet Implemented
 
-- **Text Editing**: No character insertion, deletion, or modification.
-- **Saving Files**: Cannot write changes back to a file.
 - **Search/Replace**: No search functionality.
 - **Syntax Highlighting**: No code highlighting features.
 - **Undo/Redo**: No undo or redo functionality.
