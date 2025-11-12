@@ -404,6 +404,7 @@ void editorInsertNewline() {
     erow *row = &E.row[E.cy];
     editorInsertRow(E.cy + 1, &row->chars[E.cx], row->size - E.cx);
     row = &E.row[E.cy];
+    row->size = E.cx;
     row->chars[row->size] = '\0';
     editorUpdateRow(row);
   }
@@ -765,7 +766,7 @@ void editorProcessKeypress() {
   // When ctrl + q is pressed exit the program with  status 0
   switch (c) {
   case '\r':
-      editorInsertNewline();
+    editorInsertNewline();
     break;
   case CTRL_KEY('q'):
     if (E.dirty && quit_times > 0) {
