@@ -2,7 +2,8 @@
 #define SYS_nanosleep 35
 #define SYS_exit 60
 
-struct timespec {
+struct timespec
+{
   long tv_sec;
   long tv_nsec;
 } timespec;
@@ -23,16 +24,13 @@ long syscall2(long number, long arg1, long arg2)
 {
   long result;
 
-  __asm__ __volatile__(
-    "syscall"
-    : "=a" (result)
-    : "a" (number), "D" (arg1), "S" (arg2)
-    : "rcx", "r11", "memory"
-  );
+  __asm__ __volatile__("syscall"
+                       : "=a"(result)
+                       : "a"(number), "D"(arg1), "S"(arg2)
+                       : "rcx", "r11", "memory");
 
   return result;
 }
-
 
 long syscall3(long number, long arg1, long arg2, long arg3)
 {
@@ -69,6 +67,9 @@ int parse_int(char *raw_int)
   return result;
 }
 
+/*
+ * Returns the string of given string
+ */
 long unsigned strlen(char *string)
 {
   char *cursor = string;
@@ -83,7 +84,9 @@ long unsigned strlen(char *string)
   return result;
 }
 
-
+/*
+ * Sleeps given sconds
+ */
 void sleep(long seconds)
 {
   struct timespec duration = {0};
@@ -91,6 +94,9 @@ void sleep(long seconds)
   syscall2(SYS_nanosleep, (long)(&duration), 0);
 }
 
+/*
+ * Prints to stdout `fd(1)` from syscall write
+ */
 void print(char *str)
 {
   syscall3(SYS_write, 1, (long)str, strlen(str));
@@ -117,7 +123,6 @@ int main(int argc, char *argv[])
 
   return 0;
 }
-
 
 void exit(long code)
 {
