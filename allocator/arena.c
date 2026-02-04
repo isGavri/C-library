@@ -4,7 +4,6 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <string.h>
 
 // *** Types *** //
@@ -62,6 +61,12 @@ typedef struct
     u64 pos;
 } mem_arena;
 
+typedef struct
+{
+    mem_arena* arena;
+    u64 start_pos;
+} mem_arena_temp;
+
 // *** Prototypes for arena management *** //
 mem_arena* arena_create(u64 reserve_size, u64 commit_size);
 void arena_destroy(mem_arena* arena);
@@ -70,6 +75,15 @@ void arena_pop(mem_arena* arena, u64 size);
 void arena_pop_to(mem_arena* arena, u64 pos);
 void arena_clear(mem_arena* arena);
 
+// *** Temproary Arenas *** //
+mem_arena_temp arena_temp_begin(mem_arena* arena);
+void arena_temp_end(mem_arena_temp temp);
+
+// *** Scratch Arenas *** //
+mem_arena_temp arena_scratch_get(mem_arena** conflicts, u32 num_conflicts);
+void arena_scratch_release(mem_arena_temp scratch);
+
+// *** Arena operations ***//
 #define PUSH_STRUCT(arena, T) (T*)arena_push((arena), sizeof(T), false)
 #define PUSH_ARRAY(arena, T, n) (T*)arena_push((arena), sizeof(T) * (n), false)
 #define PUSH_STRUCT_NZ(arena, T) (T*)arena_push((arena), sizeof(T), true)
@@ -83,32 +97,11 @@ b32 plat_mem_commit(void* ptr, u64 size);
 b32 plat_mem_decommit(void* ptr, u64 size);
 b32 plat_mem_release(void* ptr, u64 size);
 
-typedef struct
-{
-    int x;
-    int y;
-    int z;
-} Vector3;
 
+// *** Usge example *** //
 int main(void)
 {
     mem_arena* perm_arena = arena_create(GiB(1), KiB(1));
-
-    Vector3* vectors = PUSH_ARRAY(perm_arena, Vector3, 3);
-
-    for (int i = 0; i < 3; i++)
-    {
-        vectors[i].x = 1 + i * 3;
-        vectors[i].y = 2 + i * 3;
-        vectors[i].z = 3 + i * 3;
-    }
-
-    for (int i = 0; i < 3; i++)
-    {
-        printf("Vector %d: %d\tAddress %p\n", i, vectors[i].x, &vectors[i].x);
-        printf("Vector %d: %d\tAddress %p\n", i, vectors[i].y, &vectors[i].y);
-        printf("Vector %d: %d\tAddress %p\n", i, vectors[i].z, &vectors[i].z);
-    }
 
     arena_destroy(perm_arena);
 
@@ -205,6 +198,72 @@ void arena_pop_to(mem_arena* arena, u64 pos)
 void arena_clear(mem_arena* arena)
 {
     arena_pop_to(arena, ARENA_BASE_POS);
+}
+
+// Starts at the current posision and saves it to rewind to it later
+mem_arena_temp arena_temp_begin(mem_arena* arena)
+{
+    return (mem_arena_temp){.arena = arena, .start_pos = arena->pos};
+}
+// Rewinds to saved start position
+void arena_temp_end(mem_arena_temp temp)
+{
+    arena_pop_to(temp.arena, temp.start_pos);
+}
+
+// List of scratch arenas
+__thread static mem_arena* _scratch_arenas[2] = {NULL, NULL};
+
+// Uses arena not used by the caller
+mem_arena_temp arena_scratch_get(mem_arena** conflicts, u32 num_conficts)
+{
+    i32 scratch_index = -1;
+
+    // Loop through scratch arenas
+    for (i32 i = 0; i < 2; i++)
+    {
+        b32 conflict_found = false;
+
+        // Loop through currently used arenas
+        for (u32 j = 0; j < num_conficts; j++)
+        {
+            // They reference the same arena go to the next scratch
+            if (_scratch_arenas[i] == conflicts[j])
+            {
+                conflict_found = true;
+                break;
+            }
+        }
+
+        // No conflict use the scratch arena
+        if (!conflict_found)
+        {
+            scratch_index = i;
+            break;
+        }
+    }
+
+    // No scratch arena available
+    if (scratch_index == -1)
+    {
+        return (mem_arena_temp){0};
+    }
+
+    mem_arena** selected = &_scratch_arenas[scratch_index];
+
+    // Creates new arena if it doesnt exist yet
+    if (*selected == NULL)
+    {
+        *selected = arena_create(MiB(64), MiB(1));
+    }
+
+    // Returns pointer to the new temporary arena
+    return arena_temp_begin(*selected);
+}
+
+void arena_scratch_release(mem_arena_temp scratch)
+{
+    arena_temp_end(scratch);
 }
 
 #if defined(__linux__)
