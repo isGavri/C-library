@@ -98,10 +98,9 @@ b32 plat_mem_decommit(void* ptr, u64 size);
 b32 plat_mem_release(void* ptr, u64 size);
 
 
-// *** Usge example *** //
 int main(void)
 {
-    mem_arena* perm_arena = arena_create(GiB(1), KiB(1));
+    mem_arena* perm_arena = arena_create(GiB(1), MiB(1));
 
     arena_destroy(perm_arena);
 
@@ -181,6 +180,7 @@ void* arena_push(mem_arena* arena, u64 size, b32 non_zero)
 }
 
 // Moves back the position of the arena by given size so we can "reallocate"
+// But doesnt decommit it
 void arena_pop(mem_arena* arena, u64 size)
 {
     size = MIN(size, arena->pos - ARENA_BASE_POS);
