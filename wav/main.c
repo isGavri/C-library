@@ -27,6 +27,7 @@ int main(void)
 {
     FILE* f = fopen("test.wav", "wb");
 
+    // Notes with frequency and duration
     struct
     {
         f32 freq;

@@ -108,6 +108,8 @@ int main(void)
 }
 
 // *** Arena Management *** //
+// Release operations doesnt decommit memory
+// This happens when thereana is destroyed
 
 // Creates an arena with a given reserved size (virtual memory) and commit_size
 // (initial physical memory)
@@ -261,6 +263,7 @@ mem_arena_temp arena_scratch_get(mem_arena** conflicts, u32 num_conficts)
     return arena_temp_begin(*selected);
 }
 
+// Releases arena
 void arena_scratch_release(mem_arena_temp scratch)
 {
     arena_temp_end(scratch);

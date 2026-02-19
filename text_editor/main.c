@@ -311,6 +311,7 @@ int getWindowSize(int* rows, int* cols)
 
 /*** row operations ***/
 
+// Converts index of characters into index of rendered characters (tab expanded)
 int editorRowCxToRx(erow* row, int cx)
 {
     int rx = 0;
@@ -324,6 +325,23 @@ int editorRowCxToRx(erow* row, int cx)
         rx++;
     }
     return rx;
+}
+
+// Converts index of rendered characters (tab expanded) into index of characters
+int editorRowRxToCs(erow* row, int rx)
+{
+    int cur_rx = 0;
+    int cx;
+    for (cx = 0; cx < row->size; cx++)
+    {
+        if (row->chars[cx] == '\t')
+            cur_rx += (KILO_TAB_STOP - 1) - (cur_rx % KILO_TAB_STOP);
+        cur_rx++;
+
+        if (cx > rx)
+            return cx;
+    }
+    return cx;
 }
 
 void editorUpdateRow(erow* row)
@@ -576,20 +594,26 @@ void editorSave()
 
 /*** find ***/
 
+// Finds a substring and sets the cursor to it from the top down
 void editorFind()
 {
-    char *query = editorPrompt("Search: %s (ESC to cancel)");
-    if (query == NULL) return;
+    char* query = editorPrompt("Search: %s (ESC to cancel)");
+    if (query == NULL)
+        return;
 
     int i;
-    for(i = 0; i < E.numrows; i++)
+    for (i = 0; i < E.numrows; i++)
     {
-        erow *row = &E.row[i];
-        char *match = strstr(row->render, query);
+        erow* row = &E.row[i];
+        char* match = strstr(row->render, query);
         if (match)
         {
             E.cy = i;
-            E.cx = match - row->render;
+            // Get the index of the start of the match
+            // Pointer to the match minus pointer to the start of the row
+            // ex. start of the row 1000. match pointer 1031
+            // 1031 - 1000 = 31 which is the index of the character
+            E.cx = editorRowRxToCs(row, match - row->render);
             E.rowoff = E.numrows;
             break;
         }
@@ -961,7 +985,11 @@ void editorProcessKeypress()
             if (E.cy < E.numrows)
                 E.cx = E.row[E.cy].size;
             break;
+        case CTRL_KEY('f'):
+            editorFind();
+        break;
         case BACKSPACE:
+
         case CTRL_KEY('h'):
         case DEL_KEY:
             if (c == DEL_KEY)
@@ -1034,7 +1062,7 @@ int main(int argc, char* argv[])
         editorOpen(argv[1]);
     }
 
-    editorSetStatusMessage("HELP: Ctrl-S = save | Ctrl-Q = quit %d, %d",
+    editorSetStatusMessage("HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-F = find",
                            ARROW_RIGHT, PAGE_DOWN);
 
     // Reads 1 byte from file descriptor STDIN_FILENO aka 0 aka standard input
