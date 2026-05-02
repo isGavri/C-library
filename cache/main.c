@@ -1,92 +1,60 @@
+#include <bits/time.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 
-typedef uint32_t u32;
-typedef float f32;
+#define u32 uint32_t
 
-typedef struct
-{
-    u32 rows, cols;
+// 8 mill
+#define SIZE (1024 * 1024 * 8)
+#define MiB(n) ((u32)(n) << 20)
+#define KiB(n) ((u32)(n) << 10)
 
-    // row-major
-    f32* data;
+int main(int argc, char* argv[]) {
+  u32* arr = calloc(SIZE, sizeof(u32));
+  u32 steps = SIZE * 4;
+  u32 lengthMod = SIZE - 1;
+  //
+  u32 accessCount = 0;
+  u32 limit = KiB(32) / 4;
+  struct timespec start, end;
+  int inner_steps = 1000;
+  for (u32 i = 0; i < steps; i++) {
+    u32 index = (i * 16) & lengthMod;
+    u32 offset = index * 4;
 
-    // We store one big array and index it instead of multiple arrays and have
-    // each being the rows
-    /*
-     * Logically
-     * [1,2]
-     * [3,4]
-     * [5,6]
-     *
-     * "Physically"
-     * [ 1, 2,  3, 4, 5, 6]
-     */
-} matrix;
+    if (accessCount < 10 && offset >= limit) {
+      clock_gettime(CLOCK_MONOTONIC, &start);
+      arr[index]++;
+      for (u32 j = 0; j < inner_steps; j++) {
+        // Use a pointer-chase or random stride to break prefetcher
+        // For now, let's just do the linear one to see the shift
+        arr[((i + j) * 16) & lengthMod]++;
+      }
 
-// Rows first
-f32 mat_sum0(const matrix* mat)
-{
-    f32 sum = 0.0f;
+      clock_gettime(CLOCK_MONOTONIC, &end);
 
-    for (u32 row = 0; row < mat->rows; row++)
-    {
-        for (u32 col = 0; col < mat->cols; col++)
-        {
-            sum += mat->data[col + row * mat->cols];
+      long total_ns = end.tv_nsec - start.tv_nsec;
+      double avg_ns = (double)total_ns / inner_steps;
+
+      printf("Access %d: Offset %7d bytes, Avg Time: %.2f ns\n", accessCount,
+             offset, avg_ns);
+
+      accessCount++;
+      if (accessCount == 10) {
+        if (limit == KiB(32) / 4) {
+          limit = KiB(512) / 4;
+          accessCount = 0;
+        } else if (limit == KiB(512) / 4) {
+          limit = MiB(8);
+          accessCount = 0;
         }
-    }
-    return sum;
-}
-
-// Columns first
-f32 mat_sum1(const matrix* mat)
-{
-    f32 sum = 0.0f;
-
-    for (u32 col = 0; col < mat->cols; col++)
-    {
-        for (u32 row = 0; row < mat->rows; row++)
-        {
-            sum += mat->data[col + row * mat->cols];
-        }
-    }
-    return sum;
-}
-
-/*
-i, j, k -> ~1700 ms mid
-i, k, j -> ~110 ms fastest
-j, k, i -> ~5000 ms slowest
-*/
-
-void mat_mul(matrix* out, const matrix* a, const matrix* b)
-{
-    out->rows = a->rows;
-    out->cols = b->cols;
-}
-
-#define SIZE 1024
-int main(void)
-{
-    matrix a = {SIZE, SIZE};
-    a.data = (f32*)malloc(SIZE * SIZE * sizeof(f32));
-
-    for (u32 i = 0; i < 1000; i++)
-    {
-        a.data[i] = (f32)rand() / (f32)RAND_MAX;
+      }
+      continue;
     }
 
-    f32 s = 0.0f;
-
-    for (u32 i = 0; i < 100; i++)
-    {
-        s += mat_sum1(&a);
-    }
-
-    printf("%f\n", s);
-
-    free(a.data);
-    return 0;
+    arr[index]++;
+  }
+  return EXIT_SUCCESS;
 }
