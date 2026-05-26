@@ -49,10 +49,12 @@ typedef struct mem_arena {
   u64 commit_size;  // Actually used size
   u64 commit_pos;
   u64 pos;
+  u64 max_pos;
 } mem_arena;
 
 // List of scratch arenas
-static __thread mem_arena* _scratch_arenas[2] = {NULL, NULL};
+static __thread mem_arena* _scratch_arenas[ARENA_SCRATCH_COUNT] = {NULL};
+static __thread ArenaError _arena_last_error = ARENA_SUCCESS;
 
 // *** Error management *** //
 const char* arena_error_gets(const ArenaError error) {
@@ -81,13 +83,19 @@ const char* arena_error_gets(const ArenaError error) {
   return "No error";
 }
 
+ArenaError arena_get_last_error(void) {
+  return _arena_last_error;
+}
+
 // *** Arena Management *** //
 
 // Creates an arena with a given reserved size (virtual memory) and commit_size
 // (initial physical memory)
 ArenaError arena_create(u64 reserve_size, u64 commit_size, mem_arena** out) {
-  if (!out)
+  if (!out) {
+    _arena_last_error = ARENA_ERROR_INVALID_PARAM;
     return ARENA_ERROR_INVALID_PARAM;
+  }
 
   // Get system pagesize
   u32 pagesize = plat_get_pagesize();
@@ -97,11 +105,14 @@ ArenaError arena_create(u64 reserve_size, u64 commit_size, mem_arena** out) {
 
   void* reserved_ptr = NULL;
   ArenaError err = plat_mem_reserve(reserve_size, &reserved_ptr);
-  if (err != ARENA_SUCCESS)
+  if (err != ARENA_SUCCESS) {
+    _arena_last_error = err;
     return err;
+  }
 
   if (!plat_mem_commit(reserved_ptr, commit_size)) {
     plat_mem_release(reserved_ptr, reserve_size);
+    _arena_last_error = ARENA_ERROR_COMMIT_FAILED;
     return ARENA_ERROR_COMMIT_FAILED;
   }
 
@@ -111,33 +122,40 @@ ArenaError arena_create(u64 reserve_size, u64 commit_size, mem_arena** out) {
   arena->commit_size = commit_size;
   arena->pos = ARENA_BASE_POS;
   arena->commit_pos = commit_size;
+  arena->max_pos = ARENA_BASE_POS;
 
   *out = arena;
+  _arena_last_error = ARENA_SUCCESS;
   return ARENA_SUCCESS;
 }
 
 // Wrapper to release the memmory from the OS
-void arena_destroy(mem_arena* arena) {
-  if (arena && arena->magic == ARENA_MAGIC) {
+void arena_destroy(mem_arena** out) {
+  if (out && *out && (*out)->magic == ARENA_MAGIC) {
+    mem_arena* arena = *out;
     arena->magic = MAGIC_FREE;
     plat_mem_release(arena, arena->reserve_size);
+    *out = NULL;
   }
 }
 
 // Pushes bytes of memory to the arena and returns a pointer to the start of the
 // block
-ArenaError arena_push(mem_arena* arena, u64 size, b32 non_zero, void** out) {
-  ARENA_VALIDATE(arena);
-  if (!out)
-    return ARENA_ERROR_INVALID_PARAM;
+void* arena_push(mem_arena* arena, u64 size, b32 non_zero) {
+  if (!arena || arena->magic != ARENA_MAGIC) {
+    _arena_last_error = ARENA_ERROR_INVALID_PARAM;
+    return NULL;
+  }
 
   // Align
   u64 pos_aligned = ALIGN_UP_POW2(arena->pos, ARENA_ALIGN);
   u64 new_pos = pos_aligned + size;
 
   // Error if we run out or reserve memory
-  if (new_pos > arena->reserve_size)
-    return ARENA_ERROR_OUT_OF_MEMORY;
+  if (new_pos > arena->reserve_size) {
+    _arena_last_error = ARENA_ERROR_OUT_OF_MEMORY;
+    return NULL;
+  }
 
   // If we ran out of commited memory we ask for more
   if (new_pos > arena->commit_pos) {
@@ -150,23 +168,32 @@ ArenaError arena_push(mem_arena* arena, u64 size, b32 non_zero, void** out) {
     u64 commit_size = new_commit_pos - arena->commit_pos;
 
     if (!plat_mem_commit(mem, commit_size)) {
-      return ARENA_ERROR_COMMIT_FAILED;
+      _arena_last_error = ARENA_ERROR_COMMIT_FAILED;
+      return NULL;
     }
 
     arena->commit_pos = new_commit_pos;
   }
 
-  // Update position of commited (and occupied) memory
-  arena->pos = new_pos;
-
-  // Pointer to the allocated space
-  *out = (u8*)arena + pos_aligned;
+  void* result = (u8*)arena + pos_aligned;
 
   if (!non_zero) {
-    memset(*out, 0, size);
+    // Optimization: OS-committed memory is zeroed.
+    // We only need to zero the portion that was previously touched (dirty).
+    if (pos_aligned < arena->max_pos) {
+      u64 zero_size = MIN(size, arena->max_pos - pos_aligned);
+      memset(result, 0, zero_size);
+    }
   }
 
-  return ARENA_SUCCESS;
+  // Update position of commited (and occupied) memory
+  arena->pos = new_pos;
+  if (new_pos > arena->max_pos) {
+    arena->max_pos = new_pos;
+  }
+
+  _arena_last_error = ARENA_SUCCESS;
+  return result;
 }
 
 // Moves back the position of the arena by given size so we can "reallocate"
@@ -187,6 +214,22 @@ void arena_clear(mem_arena* arena) {
   arena_pop_to(arena, ARENA_BASE_POS);
 }
 
+// Decommits all memory beyond the current position
+void arena_decommit(mem_arena* arena) {
+  if (arena && arena->magic == ARENA_MAGIC) {
+    u32 pagesize = plat_get_pagesize();
+    u64 pos_aligned = ALIGN_UP_POW2(arena->pos, pagesize);
+    if (pos_aligned < arena->commit_pos) {
+      void* ptr = (u8*)arena + pos_aligned;
+      u64 size = arena->commit_pos - pos_aligned;
+      if (plat_mem_decommit(ptr, size)) {
+        arena->commit_pos = pos_aligned;
+        arena->max_pos = MIN(arena->max_pos, pos_aligned);
+      }
+    }
+  }
+}
+
 // Starts at the current posision and saves it to rewind to it later
 mem_arena_temp arena_temp_begin(mem_arena* arena) {
   return (mem_arena_temp){.arena = arena, .start_pos = arena->pos};
@@ -197,19 +240,21 @@ void arena_temp_end(mem_arena_temp temp) {
 }
 
 // Uses arena not used by the caller
-ArenaError arena_scratch_get(mem_arena** conflicts, u32 num_conficts,
+ArenaError arena_scratch_get(mem_arena** conflicts, u32 num_conflicts,
                              mem_arena_temp* arena) {
-  if (!arena)
+  if (!arena) {
+    _arena_last_error = ARENA_ERROR_INVALID_PARAM;
     return ARENA_ERROR_INVALID_PARAM;
+  }
 
   i32 scratch_index = -1;
 
   // Loop through scratch arenas
-  for (i32 i = 0; i < 2; i++) {
+  for (i32 i = 0; i < ARENA_SCRATCH_COUNT; i++) {
     b32 conflict_found = false;
 
     // Loop through currently used arenas
-    for (u32 j = 0; j < num_conficts; j++) {
+    for (u32 j = 0; j < num_conflicts; j++) {
       // They reference the same arena go to the next scratch
       if (_scratch_arenas[i] == conflicts[j]) {
         conflict_found = true;
@@ -226,6 +271,7 @@ ArenaError arena_scratch_get(mem_arena** conflicts, u32 num_conficts,
 
   // No scratch arena available
   if (scratch_index == -1) {
+    _arena_last_error = ARENA_ERROR_NO_SCRATCH_AVAILABLE;
     return ARENA_ERROR_NO_SCRATCH_AVAILABLE;
   }
 
@@ -234,13 +280,16 @@ ArenaError arena_scratch_get(mem_arena** conflicts, u32 num_conficts,
   // Creates new arena if it doesnt exist yet
   if (*selected == NULL) {
     ArenaError err = arena_create(MiB(64), MiB(1), selected);
-    if (err != ARENA_SUCCESS)
+    if (err != ARENA_SUCCESS) {
+      _arena_last_error = err;
       return err;
+    }
   }
 
   // Returns pointer to the new temporary arena
   *arena = arena_temp_begin(*selected);
 
+  _arena_last_error = ARENA_SUCCESS;
   return ARENA_SUCCESS;
 }
 

@@ -1,6 +1,10 @@
 #ifndef ARENA_H
 #define ARENA_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -19,6 +23,10 @@ typedef i8 b8;
 typedef i32 b32;
 
 // *** Public Macros *** //
+
+#ifndef ARENA_SCRATCH_COUNT
+#define ARENA_SCRATCH_COUNT 2
+#endif
 
 // Shifts bits to the left, ex. 0000 0000 0000 0100 = 4 | 0000 0000 0000 0001 =
 // 1
@@ -55,23 +63,23 @@ typedef struct {
 } mem_arena_temp;
 
 // *** Arena operations ***//
-#define PUSH_STRUCT(arena, T, o) arena_push((arena), sizeof(T), false, o)
-#define PUSH_ARRAY(arena, T, n, o)                                             \
-  arena_push((arena), sizeof(T) * (n), false, o)
-#define PUSH_STRUCT_NZ(arena, T, o) arena_push((arena), sizeof(T), true, o)
-#define PUSH_ARRAY_NZ(arena, T, n, o)                                          \
-  arena_push((arena), sizeof(T) * (n), true, o)
+#define PUSH_STRUCT(arena, T) (T*)arena_push(arena, sizeof(T), false)
+#define PUSH_ARRAY(arena, T, n) (T*)arena_push(arena, sizeof(T) * (n), false)
+#define PUSH_STRUCT_NZ(arena, T) (T*)arena_push(arena, sizeof(T), true)
+#define PUSH_ARRAY_NZ(arena, T, n) (T*)arena_push(arena, sizeof(T) * (n), true)
 
-/* *** Get String of ArenaError *** */
+/* *** Error Management *** */
 const char* arena_error_gets(const ArenaError error);
+ArenaError arena_get_last_error(void);
 
 // *** Prototypes for arena management *** //
 ArenaError arena_create(u64 reserve_size, u64 commit_size, mem_arena** arena);
-void arena_destroy(mem_arena* arena);
-ArenaError arena_push(mem_arena* arena, u64 size, b32 non_zero, void** out);
+void arena_destroy(mem_arena** arena);
+void* arena_push(mem_arena* arena, u64 size, b32 non_zero);
 void arena_pop(mem_arena* arena, u64 size);
 void arena_pop_to(mem_arena* arena, u64 pos);
 void arena_clear(mem_arena* arena);
+void arena_decommit(mem_arena* arena);
 
 // *** Temporary & Scratch Arenas *** //
 mem_arena_temp arena_temp_begin(mem_arena* arena);
@@ -80,5 +88,8 @@ ArenaError arena_scratch_get(mem_arena** conflicts, u32 num_conflicts,
                              mem_arena_temp* arena);
 void arena_scratch_release(mem_arena_temp scratch);
 
+#ifdef __cplusplus
+}
+#endif
 
 #endif
