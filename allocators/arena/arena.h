@@ -42,7 +42,6 @@ typedef i32 b32;
   ((u64)(n) << 30) // Same concept but 30 spaces resulting in 2^30 =
                    // 1,073,741,824 bytes
 
-
 /* --- Error Codes --- */
 typedef enum {
   ARENA_SUCCESS = 0,
@@ -52,6 +51,24 @@ typedef enum {
   ARENA_ERROR_INVALID_PARAM,
   ARENA_ERROR_NO_SCRATCH_AVAILABLE
 } ArenaError;
+
+/*
+ * Colors for errors
+ */
+
+/* RED */
+#ifndef RED
+#define RED "\033[0;31m"
+#endif // !RED
+
+/* RESET */
+#ifndef RESET
+#define RESET "\033[0m"
+#endif // !RESET
+
+#ifndef ERRORF
+#define ERRORF RED "Error: " RESET
+#endif // !ERRORF
 
 // *** Arena Structs *** //
 typedef struct mem_arena mem_arena;

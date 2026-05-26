@@ -54,33 +54,22 @@ typedef struct mem_arena {
 
 // List of scratch arenas
 static __thread mem_arena* _scratch_arenas[ARENA_SCRATCH_COUNT] = {NULL};
+// Last error
 static __thread ArenaError _arena_last_error = ARENA_SUCCESS;
+// Error strings
+const char* error_s[] = {
+    "No error",
+    ERRORF "Commiting memory for the arena failed",
+    ERRORF "Reserving memory for the arena failed",
+    ERRORF "Arena ran out of reserve memory\n\tIf you are not directly "
+           "using the arena, you can define RESERVE_SIZE with you prefered "
+           "value",
+    ERRORF "Invalid parameter. NULL pointer or invalid size",
+    ERRORF "No scratch arena available"};
 
 // *** Error management *** //
 const char* arena_error_gets(const ArenaError error) {
-  switch (error) {
-  case ARENA_ERROR_COMMIT_FAILED:
-    return "Error: Commiting memory for the arena failed";
-    break;
-  case ARENA_ERROR_RESERVE_FAILED:
-    return "Error: Reserving memory for the arena failed";
-    break;
-  case ARENA_ERROR_OUT_OF_MEMORY:
-    return "Error: Arena ran out of reserve memory\n\tIf you are not directly "
-           "using the arena, you can define RESERVE_SIZE with you prefered "
-           "value";
-    break;
-  case ARENA_ERROR_INVALID_PARAM:
-    return "Error: Invalid parameter. NULL pointer or invalid size";
-    break;
-  case ARENA_ERROR_NO_SCRATCH_AVAILABLE:
-    return "Error: No scratch arena available";
-    break;
-  case ARENA_SUCCESS:
-    return "No error";
-    break;
-  }
-  return "No error";
+  return error_s[error];
 }
 
 ArenaError arena_get_last_error(void) {
